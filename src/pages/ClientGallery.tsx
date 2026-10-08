@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { Lock, ArrowRight, Download, Play, Pause, ChevronLeft, ChevronRight, X, Image as ImageIcon, Loader2, Mail } from "lucide-react";
+import { Lock, ArrowRight, Download, Play, Pause, ChevronLeft, ChevronRight, X, Image as ImageIcon, Loader2, Mail, Camera } from "lucide-react";
 import JSZip from "jszip";
 
 // Define Types
@@ -22,6 +22,7 @@ type Gallery = {
   unlocked: boolean;
   event_date?: string;
   allow_download?: boolean;
+  allow_bulk_download?: boolean;
   require_email?: boolean;
   photos: Photo[];
 };
@@ -60,7 +61,7 @@ export default function ClientGallery() {
     e.preventDefault();
     if (!emailInput.trim() || !emailInput.includes("@")) return;
     try {
-      await fetch("http://localhost:8000/api/galleries/" + id + "/track-download", {
+      await fetch((import.meta.env.VITE_API_URL || 'http://localhost:8000/api') + "/galleries/" + id + "/track-download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailInput })
@@ -84,7 +85,7 @@ export default function ClientGallery() {
       setError("");
       setPinError("");
       
-      let url = `http://localhost:8000/api/galleries/${id}/public`;
+      let url = `${(import.meta.env.VITE_API_URL || 'http://localhost:8000/api')}/galleries/${id}/public`;
       if (pinAttempt) {
         url += `?pin=${encodeURIComponent(pinAttempt)}`;
       }
@@ -318,12 +319,24 @@ export default function ClientGallery() {
   // Full Gallery View
   return (
     <div className="min-h-screen bg-white pb-24">
+      {/* Top Business Branding Bar */}
+      <div className="fixed top-0 left-0 right-0 z-50 p-5 px-6 sm:px-10 flex justify-between items-center bg-black/20 backdrop-blur-md border-b border-white/10 text-white transition-all duration-300 hover:bg-black/40">
+        <div className="flex items-center gap-3 max-w-7xl mx-auto w-full">
+          <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-lg">
+            <Camera className="w-5 h-5 text-white" />
+          </div>
+          <span className="font-semibold text-xl tracking-tight drop-shadow-md">
+            Bigpixel Photography
+          </span>
+        </div>
+      </div>
+
       {/* Hero Section */}
       <div className="relative w-full h-[60vh] bg-neutral-100 flex items-center justify-center overflow-hidden">
         {gallery.cover_photo_url ? (
           <>
             <img src={gallery.cover_photo_url} alt="Cover" className="absolute inset-0 w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-black/30"></div>
+            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/10 to-black/80"></div>
           </>
         ) : (
           <ImageIcon className="w-16 h-16 text-neutral-300" />
@@ -332,21 +345,23 @@ export default function ClientGallery() {
           {gallery.cover_title && (
             <p className="uppercase tracking-[0.2em] text-sm font-semibold mb-4 opacity-90">{gallery.cover_title}</p>
           )}
-          <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-4">{gallery.name}</h1>
+          <h1 className="text-5xl md:text-7xl lg:text-8xl font-extrabold tracking-tighter mb-4 drop-shadow-2xl">{gallery.name}</h1>
           {gallery.description && (
-            <p className="text-lg md:text-xl opacity-90 max-w-2xl mx-auto font-light leading-relaxed">
+            <p className="text-lg md:text-2xl opacity-90 max-w-3xl mx-auto font-light leading-relaxed drop-shadow-md">
               {gallery.description}
             </p>
           )}
         </div>
       </div>
 
-      {/* Gallery Actions */}
-      <div className="max-w-7xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-neutral-100">
+      {/* Interactive Overlapping Container */}
+      <div className="relative z-20 bg-white -mt-16 sm:-mt-24 rounded-t-3xl sm:rounded-t-[3rem] shadow-2xl pt-8 sm:pt-12">
+        {/* Gallery Actions */}
+        <div className="max-w-7xl mx-auto px-6 sm:px-10 py-4 flex flex-col sm:flex-row items-center justify-between gap-6 border-b border-neutral-100/50 pb-8">
         <p className="text-neutral-500 font-medium">
           {gallery.photos.length} {gallery.photos.length === 1 ? "Photo" : "Photos"}
         </p>
-        {gallery.allow_download !== false && (
+        {gallery.allow_bulk_download !== false && (
         <button
           onClick={() => requireEmailCheck(downloadGalleryZip)}
           disabled={downloadingZip || gallery.photos.length === 0}
@@ -373,13 +388,13 @@ export default function ClientGallery() {
           {gallery.photos.map((photo, index) => (
             <div
               key={photo.id}
-              className="relative group cursor-pointer break-inside-avoid rounded-lg overflow-hidden bg-neutral-100"
+              className="relative group cursor-pointer break-inside-avoid rounded-2xl overflow-hidden bg-neutral-100 shadow-sm hover:shadow-2xl transition-all duration-500"
               onClick={() => setViewerIndex(index)}
             >
               <img
                 src={photo.thumbnail_url || photo.preview_url || photo.url}
                 alt={`Photo ${index + 1}`}
-                className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-500"
+                className="w-full h-auto object-cover group-hover:scale-105 transition-transform duration-700 ease-out will-change-transform"
                 loading="lazy"
               />
               {/* Hover overlay */}
@@ -404,6 +419,7 @@ export default function ClientGallery() {
             </div>
           ))}
         </div>
+      </div>
       </div>
 
       {/* Lightbox / Viewer */}

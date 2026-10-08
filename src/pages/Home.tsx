@@ -16,7 +16,7 @@ type ProfileGallery = {
 
 export default function Home() {
   const [galleries, setGalleries] = useState<ProfileGallery[]>([]);
-  const [settings, setSettings] = useState({ name: "Bigpixel Studio", tagline: "Capturing timeless moments with elegance.", logo_url: "" });
+  const [settings, setSettings] = useState({ name: "Bigpixel Photography", tagline: "Capturing timeless moments with elegance.", logo_url: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -24,8 +24,8 @@ export default function Home() {
     const fetchProfile = async () => {
       try {
         const [settingsRes, galleriesRes] = await Promise.all([
-          fetch("http://localhost:8000/api/settings/"),
-          fetch("http://localhost:8000/api/galleries/public/profile")
+          fetch((import.meta.env.VITE_API_URL || 'http://localhost:8000/api') + "/settings/"),
+          fetch((import.meta.env.VITE_API_URL || 'http://localhost:8000/api') + "/galleries/public/profile")
         ]);
         
         if (!galleriesRes.ok) throw new Error("Failed to load profile.");
@@ -33,7 +33,7 @@ export default function Home() {
         if (settingsRes.ok) {
           const s = await settingsRes.json();
           setSettings({
-            name: s.name || "Bigpixel Studio",
+            name: s.name || "Bigpixel Photography",
             tagline: s.tagline || "Capturing timeless moments with elegance.",
             logo_url: s.logo_url || ""
           });
