@@ -32,6 +32,7 @@ export default function ClientGallery() {
   const [gallery, setGallery] = useState<Gallery | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [pinError, setPinError] = useState("");
   
   const [pin, setPin] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -77,8 +78,11 @@ export default function ClientGallery() {
 
   const fetchGallery = React.useCallback(async (pinAttempt?: string) => {
     try {
-      setLoading(true);
+      if (!pinAttempt) {
+        setLoading(true);
+      }
       setError("");
+      setPinError("");
       
       let url = `http://localhost:8000/api/galleries/${id}/public`;
       if (pinAttempt) {
@@ -93,6 +97,16 @@ export default function ClientGallery() {
       
       const data: Gallery = await res.json();
       setGallery(data);
+
+      if (data.is_locked) {
+        if (pinAttempt) {
+          if (data.unlocked) {
+            localStorage.setItem(`gallery_pin_${id}`, pinAttempt);
+          } else {
+            setPinError("Incorrect PIN. Please try again.");
+          }
+        }
+      }
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -107,7 +121,13 @@ export default function ClientGallery() {
 
   useEffect(() => {
     if (id) {
-      void fetchGallery();
+      const savedPin = localStorage.getItem(`gallery_pin_${id}`);
+      if (savedPin) {
+        setPin(savedPin);
+        void fetchGallery(savedPin);
+      } else {
+        void fetchGallery();
+      }
     }
   }, [id, fetchGallery]);
 
@@ -275,9 +295,12 @@ export default function ClientGallery() {
               placeholder="Enter PIN"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
-              className="w-full text-center tracking-[0.5em] text-2xl font-semibold px-4 py-4 bg-neutral-50 border border-neutral-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-neutral-900/10 focus:border-neutral-900 transition-all placeholder:text-neutral-400 placeholder:tracking-normal placeholder:font-normal placeholder:text-base"
+              className="w-full text-black text-center tracking-[0.5em] text-2xl font-semibold px-4 py-4 bg-neutral-50 border border-neutral-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-neutral-900/10 focus:border-neutral-900 transition-all placeholder:text-neutral-400 placeholder:tracking-normal placeholder:font-normal placeholder:text-base"
               required
             />
+            {pinError && (
+              <p className="text-red-500 text-sm font-medium animate-in slide-in-from-top-2">{pinError}</p>
+            )}
             <button
               type="submit"
               disabled={verifying}
