@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { Lock, ArrowRight, Download, Play, Pause, ChevronLeft, ChevronRight, X, Image as ImageIcon, Loader2, Mail, Camera } from "lucide-react";
+import { Lock, ArrowRight, Download, Play, Pause, ChevronLeft, ChevronRight, X,  Loader2, Mail } from "lucide-react";
 import JSZip from "jszip";
 
 // Define Types
@@ -27,8 +27,24 @@ type Gallery = {
   photos: Photo[];
 };
 
+
+function useWindowSize() {
+  const [windowSize, setWindowSize] = useState({
+    width: typeof window !== "undefined" ? window.innerWidth : 1200,
+  });
+  useEffect(() => {
+    function handleResize() {
+      setWindowSize({ width: window.innerWidth });
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  return windowSize;
+}
+
 export default function ClientGallery() {
   const { id } = useParams<{ id: string }>();
+  useWindowSize(); // Trigger re-render on resize for masonry
   
   const [gallery, setGallery] = useState<Gallery | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,6 +56,7 @@ export default function ClientGallery() {
   
   // Lightbox State
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [imageRatios, setImageRatios] = useState<Record<number, number>>({});
   const [isPlaying, setIsPlaying] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
     const [downloadingPhotoId, setDownloadingPhotoId] = useState<number | null>(null);
@@ -76,6 +93,10 @@ export default function ClientGallery() {
   };
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const galleryRef = useRef<HTMLDivElement>(null);
+  const scrollToGallery = () => {
+    galleryRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const fetchGallery = React.useCallback(async (pinAttempt?: string) => {
     try {
@@ -319,86 +340,140 @@ export default function ClientGallery() {
   // Full Gallery View
   return (
     <div className="min-h-screen bg-white pb-24">
-      {/* Top Business Branding Bar */}
-      <div className="fixed top-0 left-0 right-0 z-50 p-5 px-6 sm:px-10 flex justify-between items-center bg-black/20 backdrop-blur-md border-b border-white/10 text-white transition-all duration-300 hover:bg-black/40">
-        <div className="flex items-center gap-3 max-w-7xl mx-auto w-full">
-          <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-lg">
-            <Camera className="w-5 h-5 text-white" />
-          </div>
-          <span className="font-semibold text-xl tracking-tight drop-shadow-md">
-            Bigpixel Photography
-          </span>
-        </div>
-      </div>
-
+      
       {/* Hero Section */}
-      <div className="relative w-full h-[60vh] bg-neutral-100 flex items-center justify-center overflow-hidden">
+      <div className="relative w-full min-h-screen bg-neutral-900 flex flex-col items-center justify-center overflow-hidden">
         {gallery.cover_photo_url ? (
           <>
             <img src={gallery.cover_photo_url} alt="Cover" className="absolute inset-0 w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/10 to-black/80"></div>
+            <div className="absolute inset-0 bg-black/40"></div>
           </>
         ) : (
-          <ImageIcon className="w-16 h-16 text-neutral-300" />
+          <div className="absolute inset-0 bg-neutral-900"></div>
         )}
-        <div className="relative z-10 text-center text-white p-6 max-w-3xl">
-          {gallery.cover_title && (
-            <p className="uppercase tracking-[0.2em] text-sm font-semibold mb-4 opacity-90">{gallery.cover_title}</p>
-          )}
-          <h1 className="text-5xl md:text-7xl lg:text-8xl font-extrabold tracking-tighter mb-4 drop-shadow-2xl">{gallery.name}</h1>
-          {gallery.description && (
-            <p className="text-lg md:text-2xl opacity-90 max-w-3xl mx-auto font-light leading-relaxed drop-shadow-md">
-              {gallery.description}
+        
+        <div className="relative z-10 text-center text-white px-6 w-full flex flex-col items-center">
+          <h1 className="text-4xl md:text-6xl lg:text-7xl font-bold uppercase tracking-[0.15em] mb-4 drop-shadow-lg">
+            {gallery.name}
+          </h1>
+          
+          {(gallery.event_date || gallery.cover_title) && (
+            <p className="uppercase tracking-[0.2em] text-xs md:text-sm font-medium mb-10 opacity-90 drop-shadow-md">
+              {gallery.event_date || gallery.cover_title}
             </p>
           )}
+          
+          <button 
+            onClick={scrollToGallery}
+            className="border border-white hover:bg-white hover:text-black transition-colors duration-300 px-8 py-3 uppercase tracking-[0.2em] text-xs font-semibold"
+          >
+            View Gallery
+          </button>
+        </div>
+
+        {/* Bottom Branding on Hero */}
+        <div className="absolute bottom-10 left-0 right-0 flex flex-col items-center text-white opacity-80">
+          <div className="w-10 h-10 bg-black/50 backdrop-blur-sm rounded-md flex items-center justify-center mb-3">
+             <span className="font-serif italic text-lg">Bp</span>
+          </div>
+          <span className="uppercase text-[10px] tracking-[0.3em] font-medium">Big Pixel Photography</span>
         </div>
       </div>
 
-      {/* Interactive Overlapping Container */}
-      <div className="relative z-20 bg-white -mt-16 sm:-mt-24 rounded-t-3xl sm:rounded-t-[3rem] shadow-2xl pt-8 sm:pt-12">
-        {/* Gallery Actions */}
-        <div className="max-w-7xl mx-auto px-6 sm:px-10 py-4 flex flex-col sm:flex-row items-center justify-between gap-6 border-b border-neutral-100/50 pb-8">
-        <p className="text-neutral-500 font-medium">
-          {gallery.photos.length} {gallery.photos.length === 1 ? "Photo" : "Photos"}
-        </p>
-        {gallery.allow_bulk_download !== false && (
-        <button
-          onClick={() => requireEmailCheck(downloadGalleryZip)}
-          disabled={downloadingZip || gallery.photos.length === 0}
-          className="bg-black hover:bg-neutral-800 text-white font-medium px-6 py-2.5 rounded-full transition-colors disabled:opacity-70 flex items-center gap-2"
-        >
-          {downloadingZip ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Preparing Download...
-            </>
-          ) : (
-            <>
-              <Download className="w-4 h-4" />
-              Download All
-            </>
+      {/* Sticky White Bar */}
+      <div ref={galleryRef} className="sticky top-0 z-40 bg-white px-6 md:px-10 py-5 flex flex-col sm:flex-row items-center justify-between border-b border-gray-200/60 shadow-sm">
+        <div className="flex flex-col text-center sm:text-left">
+          <span className="uppercase font-bold tracking-[0.15em] text-gray-900 text-lg md:text-xl">
+            {gallery.name}
+          </span>
+          <span className="uppercase text-[9px] tracking-[0.2em] text-gray-400 mt-1">
+            Big Pixel Photography
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-6 text-gray-400 mt-4 sm:mt-0">
+          {gallery.allow_bulk_download !== false && (
+            <button 
+              onClick={() => requireEmailCheck(downloadGalleryZip)}
+              disabled={downloadingZip || gallery.photos.length === 0}
+              title="Download All" 
+              className="hover:text-black transition-colors duration-300 disabled:opacity-50"
+            >
+              {downloadingZip ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+            </button>
           )}
-        </button>
-        )}
+          <button 
+            onClick={() => {
+              if (gallery.photos.length > 0) {
+                setViewerIndex(0);
+                setIsPlaying(true);
+              }
+            }} 
+            title="Slideshow" 
+            className="hover:text-black transition-colors duration-300"
+          >
+            <Play className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
-      {/* Photo Grid */}
-      <div className="max-w-7xl mx-auto px-6 py-12">
-        <div className="columns-1 sm:columns-2 lg:columns-3 gap-6 space-y-6">
-          {gallery.photos.map((photo, index) => (
+            <style>{`
+        .unique-grid {
+          --grid-col-min: 130px;
+          --grid-row-min: 130px;
+        }
+        @media (min-width: 640px) {
+          .unique-grid {
+            --grid-col-min: 180px;
+            --grid-row-min: 180px;
+          }
+        }
+        @media (min-width: 1024px) {
+          .unique-grid {
+            --grid-col-min: 240px;
+            --grid-row-min: 240px;
+          }
+        }
+      `}</style>
+      
+      {/* Photo Grid (Unique Dense Collage) */}
+      <div className="w-full px-1 py-1">
+        <div 
+          className="grid gap-1.5 unique-grid"
+          style={{
+            gridTemplateColumns: "repeat(auto-fill, minmax(var(--grid-col-min, 120px), 1fr))",
+            gridAutoRows: "var(--grid-row-min, 120px)",
+            gridAutoFlow: "dense"
+          }}
+        >
+          {gallery.photos.map((photo, index) => {
+            const ratio = imageRatios[photo.id];
+            let spanClass = "col-span-1 row-span-1";
+            
+            if (ratio) {
+              if (ratio > 1.3) spanClass = "col-span-2 sm:col-span-2 row-span-1"; // Landscape
+              else if (ratio < 0.8) spanClass = "col-span-1 row-span-2"; // Portrait
+            }
+
+            return (
             <div
               key={photo.id}
-              className="relative group cursor-pointer break-inside-avoid rounded-2xl overflow-hidden bg-neutral-100 shadow-sm hover:shadow-2xl transition-all duration-500"
+              className={`relative group cursor-pointer overflow-hidden bg-neutral-100 ${spanClass}`}
               onClick={() => setViewerIndex(index)}
             >
               <img
                 src={photo.thumbnail_url || photo.preview_url || photo.url}
                 alt={`Photo ${index + 1}`}
-                className="w-full h-auto object-cover group-hover:scale-105 transition-transform duration-700 ease-out will-change-transform"
+                className="w-full h-full object-cover opacity-100 group-hover:opacity-90 transition-opacity duration-300"
                 loading="lazy"
+                onLoad={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  setImageRatios(prev => ({
+                    ...prev,
+                    [photo.id]: target.naturalWidth / target.naturalHeight
+                  }));
+                }}
               />
-              {/* Hover overlay */}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300"></div>
               
               {gallery.allow_download !== false && (
               <button
@@ -407,7 +482,7 @@ export default function ClientGallery() {
                   requireEmailCheck(() => downloadPhoto(photo, e));
                 }}
                 disabled={downloadingPhotoId === photo.id}
-                className="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-black p-2.5 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0 shadow-lg"
+                className="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-black p-2.5 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg"
               >
                 {downloadingPhotoId === photo.id ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -417,9 +492,9 @@ export default function ClientGallery() {
               </button>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
-      </div>
       </div>
 
       {/* Lightbox / Viewer */}

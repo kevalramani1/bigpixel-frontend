@@ -16,7 +16,7 @@ type ProfileGallery = {
 
 export default function Home() {
   const [galleries, setGalleries] = useState<ProfileGallery[]>([]);
-  const [settings, setSettings] = useState({ name: "Bigpixel Photography", tagline: "Capturing timeless moments with elegance.", logo_url: "" });
+  const [settings, setSettings] = useState({ name: "Big Pixel Photography", tagline: "Capturing timeless moments with elegance.", logo_url: "" });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -33,7 +33,7 @@ export default function Home() {
         if (settingsRes.ok) {
           const s = await settingsRes.json();
           setSettings({
-            name: s.name || "Bigpixel Photography",
+            name: s.name || "Big Pixel Photography",
             tagline: s.tagline || "Capturing timeless moments with elegance.",
             logo_url: s.logo_url || ""
           });
