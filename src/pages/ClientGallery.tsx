@@ -61,7 +61,7 @@ export default function ClientGallery() {
     e.preventDefault();
     if (!emailInput.trim() || !emailInput.includes("@")) return;
     try {
-      await fetch((import.meta.env.VITE_API_URL || 'http://localhost:8000/api') + "/galleries/" + id + "/track-download", {
+      await fetch(( (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '') + ( (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.endsWith('/api')) ? '/api' : '' ) ) + "/galleries/" + id + "/track-download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailInput })
@@ -85,7 +85,7 @@ export default function ClientGallery() {
       setError("");
       setPinError("");
       
-      let url = `${(import.meta.env.VITE_API_URL || 'http://localhost:8000/api')}/galleries/${id}/public`;
+      let url = `${( (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '') + ( (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.endsWith('/api')) ? '/api' : '' ) )}/galleries/${id}/public`;
       if (pinAttempt) {
         url += `?pin=${encodeURIComponent(pinAttempt)}`;
       }

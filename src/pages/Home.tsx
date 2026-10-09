@@ -24,8 +24,8 @@ export default function Home() {
     const fetchProfile = async () => {
       try {
         const [settingsRes, galleriesRes] = await Promise.all([
-          fetch((import.meta.env.VITE_API_URL || 'http://localhost:8000/api') + "/settings/"),
-          fetch((import.meta.env.VITE_API_URL || 'http://localhost:8000/api') + "/galleries/public/profile")
+          fetch(( (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '') + ( (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.endsWith('/api')) ? '/api' : '' ) ) + "/settings/"),
+          fetch(( (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '') + ( (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.endsWith('/api')) ? '/api' : '' ) ) + "/galleries/public/profile")
         ]);
         
         if (!galleriesRes.ok) throw new Error("Failed to load profile.");
