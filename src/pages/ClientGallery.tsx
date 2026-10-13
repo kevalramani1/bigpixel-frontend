@@ -313,7 +313,7 @@ export default function ClientGallery() {
           
           <form onSubmit={handlePinSubmit} className="space-y-5">
             <input
-              type="text"
+              type="password"
               placeholder="Enter PIN"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
