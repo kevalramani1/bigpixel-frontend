@@ -423,43 +423,43 @@ export default function ClientGallery() {
                 const index = row * photosPerRow + column;
                 const ratio = imageRatios[photo.id] || 1;
                 return (
-            <div
-              key={photo.id}
-              className="relative group min-w-0 cursor-pointer overflow-hidden bg-neutral-100"
-              style={{ flex: `${ratio} 1 0%`, aspectRatio: ratio }}
-              onClick={() => setViewerIndex(index)}
-            >
-              <img
-                src={photo.preview_url || photo.url || photo.thumbnail_url}
-                alt={`Photo ${index + 1}`}
-                className="block w-full h-full object-cover opacity-100 group-hover:opacity-90 transition-opacity duration-300"
-                loading="lazy"
-                decoding="async"
-                onLoad={(event) => {
-                  const image = event.currentTarget;
-                  if (!image.naturalWidth || !image.naturalHeight) return;
-                  const ratio = image.naturalWidth / image.naturalHeight;
-                  setImageRatios((previous) => previous[photo.id] === ratio ? previous : { ...previous, [photo.id]: ratio });
-                }}
-              />
+                  <div
+                    key={photo.id}
+                    className="relative group min-w-0 cursor-pointer overflow-hidden bg-neutral-100"
+                    style={{ flex: `${ratio} 1 0%`, aspectRatio: ratio }}
+                    onClick={() => setViewerIndex(index)}
+                  >
+                    <img
+                      src={photo.preview_url || photo.url || photo.thumbnail_url}
+                      alt={`Photo ${index + 1}`}
+                      className="block w-full h-full object-cover opacity-100 group-hover:opacity-90 transition-opacity duration-300"
+                      loading="lazy"
+                      decoding="async"
+                      onLoad={(event) => {
+                        const image = event.currentTarget;
+                        if (!image.naturalWidth || !image.naturalHeight) return;
+                        const ratio = image.naturalWidth / image.naturalHeight;
+                        setImageRatios((previous) => previous[photo.id] === ratio ? previous : { ...previous, [photo.id]: ratio });
+                      }}
+                    />
               
-              {gallery.allow_download !== false && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  requireEmailCheck(() => downloadPhoto(photo, e));
-                }}
-                disabled={downloadingPhotoId === photo.id}
-                className="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-black p-2.5 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg"
-              >
-                {downloadingPhotoId === photo.id ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4" />
-                )}
-              </button>
-              )}
-            </div>
+                    {gallery.allow_download !== false && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        requireEmailCheck(() => downloadPhoto(photo, e));
+                      }}
+                      disabled={downloadingPhotoId === photo.id}
+                      className="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-black p-2.5 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg"
+                    >
+                      {downloadingPhotoId === photo.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                    </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
