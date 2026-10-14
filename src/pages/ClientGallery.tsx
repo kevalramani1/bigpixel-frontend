@@ -34,6 +34,16 @@ export default function ClientGallery() {
   const { slug } = useParams<{ slug: string }>();
   
   const [gallery, setGallery] = useState<Gallery | null>(null);
+  const [photosPerRow, setPhotosPerRow] = useState(() => window.matchMedia("(min-width: 1024px)").matches ? 4 : 2);
+  const [imageRatios, setImageRatios] = useState<Record<number, number>>({});
+
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const updateColumns = () => setPhotosPerRow(desktop.matches ? 4 : 2);
+    desktop.addEventListener("change", updateColumns);
+    return () => desktop.removeEventListener("change", updateColumns);
+  }, []);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pinError, setPinError] = useState("");
@@ -406,19 +416,31 @@ export default function ClientGallery() {
 
       {/* Photo Grid */}
       <div className="w-full px-1 py-1">
-        <div className="columns-2 lg:columns-4 gap-1.5">
-          {gallery.photos.map((photo, index) => (
+        <div className="flex flex-col gap-1.5">
+          {Array.from({ length: Math.ceil(gallery.photos.length / photosPerRow) }, (_, row) => (
+            <div key={gallery.photos[row * photosPerRow].id} className="flex gap-1.5">
+              {gallery.photos.slice(row * photosPerRow, (row + 1) * photosPerRow).map((photo, column) => {
+                const index = row * photosPerRow + column;
+                const ratio = imageRatios[photo.id] || 1;
+                return (
             <div
               key={photo.id}
-              className="relative group mb-1.5 break-inside-avoid cursor-pointer overflow-hidden bg-neutral-100"
+              className="relative group min-w-0 cursor-pointer overflow-hidden bg-neutral-100"
+              style={{ flex: `${ratio} 1 0%`, aspectRatio: ratio }}
               onClick={() => setViewerIndex(index)}
             >
               <img
                 src={photo.preview_url || photo.url || photo.thumbnail_url}
                 alt={`Photo ${index + 1}`}
-                className="block w-full h-auto opacity-100 group-hover:opacity-90 transition-opacity duration-300"
+                className="block w-full h-full object-cover opacity-100 group-hover:opacity-90 transition-opacity duration-300"
                 loading="lazy"
                 decoding="async"
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  if (!image.naturalWidth || !image.naturalHeight) return;
+                  const ratio = image.naturalWidth / image.naturalHeight;
+                  setImageRatios((previous) => previous[photo.id] === ratio ? previous : { ...previous, [photo.id]: ratio });
+                }}
               />
               
               {gallery.allow_download !== false && (
@@ -437,6 +459,9 @@ export default function ClientGallery() {
                 )}
               </button>
               )}
+            </div>
+                );
+              })}
             </div>
           ))}
         </div>
