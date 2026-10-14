@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Lock, ArrowRight, Download, Play, Pause, ChevronLeft, ChevronRight, X,  Loader2, Mail } from "lucide-react";
-import JSZip from "jszip";
 import { getMasonryLayout } from "../lib/masonry";
 
 // Define Types
@@ -39,6 +38,7 @@ export default function ClientGallery() {
   const [imageRatios, setImageRatios] = useState<Record<number, number>>({});
   const [imageStatus, setImageStatus] = useState<Record<number, "loading" | "ready" | "loaded" | "error">>({});
   const [requestedThrough, setRequestedThrough] = useState(0);
+  const [pendingBatches, setPendingBatches] = useState<number[][]>([]);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 1024px)");
@@ -82,25 +82,28 @@ export default function ClientGallery() {
   // Gate batches explicitly: native lazy loading could stall an offscreen batch member.
   useEffect(() => {
     if (!masonryRef.current || !gridWidth || !gallery || !requestedThrough) return;
-    const statuses = Object.values(imageStatus);
-    if (statuses.includes("loading")) return;
-    if (statuses.includes("ready")) {
-      // Reveal the completed batch together before starting the next one.
-      setImageStatus((previous) => Object.fromEntries(Object.entries(previous).map(([id, status]) =>
-        [id, status === "ready" ? "loaded" : status]
-      )));
+    const first = pendingBatches[0];
+    if (first?.every((id) => imageStatus[id] === "ready" || imageStatus[id] === "error")) {
+      setImageStatus((previous) => {
+        const next = { ...previous };
+        first.forEach((id) => { if (next[id] === "ready") next[id] = "loaded"; });
+        return next;
+      });
+      setPendingBatches((previous) => previous.slice(1));
       return;
     }
+    // Warm one following row without letting it appear before the current row.
+    if (pendingBatches.length >= 2) return;
     const nextIndex = gallery.photos.findIndex((photo) => !imageStatus[photo.id]);
-    if (nextIndex === -1 || nextIndex >= requestedThrough) return;
+    if (nextIndex === -1 || nextIndex >= requestedThrough + columnCount) return;
+    const batch = gallery.photos.slice(nextIndex, nextIndex + columnCount).map((photo) => photo.id);
     setImageStatus((previous) => {
       const next = { ...previous };
-      gallery.photos.slice(nextIndex, nextIndex + columnCount).forEach((photo) => {
-        next[photo.id] = "loading";
-      });
+      batch.forEach((id) => { next[id] = "loading"; });
       return next;
     });
-  }, [gallery, imageStatus, requestedThrough, columnCount, gridWidth]);
+    setPendingBatches((previous) => [...previous, batch]);
+  }, [gallery, imageStatus, requestedThrough, columnCount, gridWidth, pendingBatches]);
 
 
   
@@ -173,6 +176,7 @@ export default function ClientGallery() {
       const data: Gallery = await res.json();
       setImageStatus({});
       setRequestedThrough(0);
+      setPendingBatches([]);
       setGallery(data);
 
       if (data.is_locked) {
@@ -253,6 +257,7 @@ export default function ClientGallery() {
     if (!gallery || gallery.photos.length === 0) return;
     try {
       setDownloadingZip(true);
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       const folder = zip.folder(gallery.name.replace(/[^a-z0-9]/gi, '_').toLowerCase() || "gallery");
       
@@ -493,6 +498,7 @@ export default function ClientGallery() {
                 alt={`Photo ${index + 1}`}
                 className={`block w-full h-full object-contain transition-opacity duration-300 ${imageStatus[photo.id] === "loaded" ? "opacity-100 group-hover:opacity-90" : "opacity-0"}`}
                 loading="eager"
+                fetchPriority={pendingBatches[0]?.includes(photo.id) ? "high" : "low"}
                 decoding="async"
                 onLoad={(event) => {
                   const image = event.currentTarget;

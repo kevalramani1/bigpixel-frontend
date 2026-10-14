@@ -46,7 +46,7 @@ async function assertPendingBatch(app, start) {
     assert.ok(app.requests.some(request=>request.id===id),'every photo in the batch downloads together');
     assert.ok(!(await app.page.getByAltText(`Photo ${id}`,{exact:true}).getAttribute('class')).includes('opacity-100'),'completed siblings stay hidden until the whole batch is ready');
   }
-  assert.equal(await app.page.getByAltText(`Photo ${start+app.columns}`,{exact:true}).getAttribute('src'),null,'next batch waits for the current batch');
+  assert.ok(!(await app.page.getByAltText(`Photo ${start+app.columns}`,{exact:true}).getAttribute('class')).includes('opacity-100'),'following row stays hidden while the current row is pending');
 }
 
 try {
@@ -57,6 +57,9 @@ try {
   await app.page.waitForFunction(()=>getComputedStyle(document.querySelector('img[alt="Photo 1"]')).opacity==='0');
   assert.equal(await app.page.getByAltText('Photo 1',{exact:true}).evaluate(image=>getComputedStyle(image).opacity), '0', 'placeholder remains visible while download is pending');
   await assertPendingBatch(app,1);
+  await assertPendingBatch(app,5);
+  assert.equal(await app.page.getByAltText('Photo 9',{exact:true}).getAttribute('src'),null,'at most two rows download at once');
+  assert.ok(app.requests.some(request=>request.id===5),'second row starts downloading before the slow first row finishes');
   app.releaseFirst();
   await app.page.waitForFunction(()=>[1,2,3,4].every(id=>document.querySelector(`img[alt="Photo ${id}"]`)?.classList.contains('opacity-100')));
   await assertPendingBatch(app,5);
@@ -74,18 +77,22 @@ try {
   assert.match(await viewer.getAttribute('src'),/preview-200\.svg/,'lightbox opens the selected photo directly');
   assert.deepEqual(app.errors,[]);
   await app.page.close();
-  console.log('Desktop: 4-photo batches load sequentially and reveal together; 200-photo lazy loading, resize and lightbox passed');
+  console.log('Desktop: 4-photo rows preload with two-row concurrency and reveal in order; 200-photo lazy loading, resize and lightbox passed');
 
   const mobile=await fixture(false,390,true);
   await assertPendingBatch(mobile,1);
-  mobile.releaseFirst();
-  await mobile.page.waitForFunction(()=>[1,2].every(id=>document.querySelector(`img[alt="Photo ${id}"]`)?.classList.contains('opacity-100')));
   await assertPendingBatch(mobile,3);
+  assert.equal(await mobile.page.getByAltText('Photo 5',{exact:true}).getAttribute('src'),null,'mobile preloading is also bounded to two rows');
   mobile.releaseSecond();
-  await mobile.page.waitForFunction(()=>[3,4].every(id=>document.querySelector(`img[alt="Photo ${id}"]`)?.classList.contains('opacity-100')));
+  await mobile.page.waitForFunction(()=>[3,4].every(id=>{
+    const image=document.querySelector(`img[alt="Photo ${id}"]`);
+    return image?.complete&&image.naturalWidth>0&&!image.classList.contains('opacity-100');
+  }));
+  mobile.releaseFirst();
+  await mobile.page.waitForFunction(()=>[1,2,3,4].every(id=>document.querySelector(`img[alt="Photo ${id}"]`)?.classList.contains('opacity-100')));
   assert.deepEqual(mobile.errors,[]);
   await mobile.page.close();
-  console.log('Mobile: 2-photo batches load sequentially and reveal together');
+  console.log('Mobile: completed preloaded 2-photo row waits for the first row, then appears without another download');
 
   const retry=await fixture(true);
   retry.releaseFirst();

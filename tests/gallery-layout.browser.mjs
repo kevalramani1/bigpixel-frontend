@@ -1,5 +1,7 @@
 // Start the frontend dev server, then run: node tests/gallery-layout.browser.mjs
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import JSZip from 'jszip';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
 const dimensions = [[1600,900],[900,1600],[1600,900],[1600,900],[900,1600],[1200,1200],[1600,900],[900,1600],[1600,900]];
@@ -10,8 +12,10 @@ const photos = dimensions.map(([width,height], index) => {
 try {
   const page = await browser.newPage();
   const errors = [];
+  const requests = [];
+  page.on('request', request => requests.push(request.url()));
   page.on('pageerror', error => errors.push(error.message));
-  await page.route('**/api/galleries/layout-test/public*', route => route.fulfill({ json: { id:1, slug:'layout-test', name:'Mixed ratios', is_locked:false, unlocked:true, allow_download:false, allow_bulk_download:false, photos } }));
+  await page.route('**/api/galleries/layout-test/public*', route => route.fulfill({ json: { id:1, slug:'layout-test', name:'Mixed ratios', is_locked:false, unlocked:true, allow_download:false, allow_bulk_download:true, photos } }));
   await page.setViewportSize({ width:390, height:844 });
   await page.goto(`${process.env.GALLERY_TEST_URL || 'http://localhost:5174'}/gallery/layout-test`);
   for (const [width,height,columns] of [[390,844,2],[1440,900,4],[768,900,2],[1440,900,4]]) {
@@ -63,6 +67,16 @@ try {
     await page.keyboard.press('Escape');
     console.log(`${width}px: ${columns} masonry columns, original ratios, no column gaps, resizing and lightbox passed`);
   }
+  assert.ok(!requests.some(url=>url.includes('jszip')),'ZIP library is not fetched when viewing the gallery');
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByTitle('Download All',{exact:true}).click();
+  const download = await downloadEvent;
+  assert.equal(download.suggestedFilename(),'Mixed ratios.zip');
+  const zip = await JSZip.loadAsync(await readFile(await download.path()));
+  assert.deepEqual(Object.values(zip.files).filter(file=>!file.dir).map(file=>file.name), photos.map((_,index)=>`mixed_ratios/photo_${index+1}.jpg`));
+  assert.ok((await zip.file('mixed_ratios/photo_1.jpg').async('string')).includes('>1</text>'),'download contains the original image');
+  assert.ok(requests.some(url=>url.includes('jszip')),'ZIP library loads on demand when downloading');
+  console.log('ZIP: library loads only on download and all original photos are included in order');
   assert.deepEqual(errors, []);
 } finally {
   await browser.close();
