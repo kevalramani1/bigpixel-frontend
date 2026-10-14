@@ -7,6 +7,7 @@ import { SplitText } from "../components/SplitText";
 
 type ProfileGallery = {
   id: number;
+  slug: string;
   name: string;
   cover_title?: string;
   cover_photo_url?: string;
@@ -107,7 +108,7 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {galleries.map((gallery) => (
               <Link 
-                to={`/gallery/${gallery.id}`} 
+                to={`/gallery/${gallery.slug}`}
                 key={gallery.id}
                 className="group block"
               >

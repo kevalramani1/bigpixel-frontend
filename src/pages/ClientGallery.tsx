@@ -14,6 +14,7 @@ type Photo = {
 
 type Gallery = {
   id: number;
+  slug: string;
   name: string;
   cover_title?: string;
   description?: string;
@@ -28,23 +29,9 @@ type Gallery = {
 };
 
 
-function useWindowSize() {
-  const [windowSize, setWindowSize] = useState({
-    width: typeof window !== "undefined" ? window.innerWidth : 1200,
-  });
-  useEffect(() => {
-    function handleResize() {
-      setWindowSize({ width: window.innerWidth });
-    }
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-  return windowSize;
-}
 
 export default function ClientGallery() {
-  const { id } = useParams<{ id: string }>();
-  useWindowSize(); // Trigger re-render on resize for masonry
+  const { slug } = useParams<{ slug: string }>();
   
   const [gallery, setGallery] = useState<Gallery | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,7 +43,6 @@ export default function ClientGallery() {
   
   // Lightbox State
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-  const [imageRatios, setImageRatios] = useState<Record<number, number>>({});
   const [isPlaying, setIsPlaying] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
     const [downloadingPhotoId, setDownloadingPhotoId] = useState<number | null>(null);
@@ -66,7 +52,7 @@ export default function ClientGallery() {
   const [pendingDownloadAction, setPendingDownloadAction] = useState<(() => void) | null>(null);
 
   const requireEmailCheck = (action: () => void) => {
-    if (gallery?.require_email && !localStorage.getItem("gallery_email_" + id)) {
+    if (gallery?.require_email && !localStorage.getItem("gallery_email_" + slug)) {
       setPendingDownloadAction(() => action);
       setShowEmailModal(true);
     } else {
@@ -78,12 +64,13 @@ export default function ClientGallery() {
     e.preventDefault();
     if (!emailInput.trim() || !emailInput.includes("@")) return;
     try {
-      await fetch(( (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '') + ( (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.endsWith('/api')) ? '/api' : '' ) ) + "/galleries/" + id + "/track-download", {
+      const res = await fetch(( (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '') + ( (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.endsWith('/api')) ? '/api' : '' ) ) + "/galleries/" + slug + "/track-download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailInput })
       });
-      localStorage.setItem("gallery_email_" + id, emailInput);
+      if (!res.ok) throw new Error("Failed to submit email.");
+      localStorage.setItem("gallery_email_" + slug, emailInput);
       setShowEmailModal(false);
       if (pendingDownloadAction) pendingDownloadAction();
     } catch (err) {
@@ -106,7 +93,7 @@ export default function ClientGallery() {
       setError("");
       setPinError("");
       
-      let url = `${( (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '') + ( (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.endsWith('/api')) ? '/api' : '' ) )}/galleries/${id}/public`;
+      let url = `${( (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/$/, '') + ( (import.meta.env.VITE_API_URL && !import.meta.env.VITE_API_URL.endsWith('/api')) ? '/api' : '' ) )}/galleries/${slug}/public`;
       if (pinAttempt) {
         url += `?pin=${encodeURIComponent(pinAttempt)}`;
       }
@@ -123,7 +110,7 @@ export default function ClientGallery() {
       if (data.is_locked) {
         if (pinAttempt) {
           if (data.unlocked) {
-            localStorage.setItem(`gallery_pin_${id}`, pinAttempt);
+            localStorage.setItem(`gallery_pin_${slug}`, pinAttempt);
           } else {
             setPinError("Incorrect PIN. Please try again.");
           }
@@ -139,11 +126,11 @@ export default function ClientGallery() {
       setLoading(false);
       setVerifying(false);
     }
-  }, [id]);
+  }, [slug]);
 
   useEffect(() => {
-    if (id) {
-      const savedPin = localStorage.getItem(`gallery_pin_${id}`);
+    if (slug) {
+      const savedPin = localStorage.getItem(`gallery_pin_${slug}`);
       if (savedPin) {
         setPin(savedPin);
         void fetchGallery(savedPin);
@@ -151,7 +138,7 @@ export default function ClientGallery() {
         void fetchGallery();
       }
     }
-  }, [id, fetchGallery]);
+  }, [slug, fetchGallery]);
 
   // Slideshow Effect
   useEffect(() => {
@@ -417,62 +404,20 @@ export default function ClientGallery() {
         </div>
       </div>
 
-            <style>{`
-        .unique-grid {
-          --grid-col-min: 130px;
-          --grid-row-min: 130px;
-        }
-        @media (min-width: 640px) {
-          .unique-grid {
-            --grid-col-min: 180px;
-            --grid-row-min: 180px;
-          }
-        }
-        @media (min-width: 1024px) {
-          .unique-grid {
-            --grid-col-min: 240px;
-            --grid-row-min: 240px;
-          }
-        }
-      `}</style>
-      
-      {/* Photo Grid (Unique Dense Collage) */}
+      {/* Photo Grid */}
       <div className="w-full px-1 py-1">
-        <div 
-          className="grid gap-1.5 unique-grid"
-          style={{
-            gridTemplateColumns: "repeat(auto-fill, minmax(var(--grid-col-min, 120px), 1fr))",
-            gridAutoRows: "var(--grid-row-min, 120px)",
-            gridAutoFlow: "dense"
-          }}
-        >
-          {gallery.photos.map((photo, index) => {
-            const ratio = imageRatios[photo.id];
-            let spanClass = "col-span-1 row-span-1";
-            
-            if (ratio) {
-              if (ratio > 1.3) spanClass = "col-span-2 sm:col-span-2 row-span-1"; // Landscape
-              else if (ratio < 0.8) spanClass = "col-span-1 row-span-2"; // Portrait
-            }
-
-            return (
+        <div className="columns-2 lg:columns-4 gap-1.5">
+          {gallery.photos.map((photo, index) => (
             <div
               key={photo.id}
-              className={`relative group cursor-pointer overflow-hidden bg-neutral-100 ${spanClass}`}
+              className="relative group mb-1.5 break-inside-avoid cursor-pointer overflow-hidden bg-neutral-100"
               onClick={() => setViewerIndex(index)}
             >
               <img
                 src={photo.thumbnail_url || photo.preview_url || photo.url}
                 alt={`Photo ${index + 1}`}
-                className="w-full h-full object-cover opacity-100 group-hover:opacity-90 transition-opacity duration-300"
+                className="block w-full h-auto opacity-100 group-hover:opacity-90 transition-opacity duration-300"
                 loading="lazy"
-                onLoad={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  setImageRatios(prev => ({
-                    ...prev,
-                    [photo.id]: target.naturalWidth / target.naturalHeight
-                  }));
-                }}
               />
               
               {gallery.allow_download !== false && (
@@ -492,8 +437,7 @@ export default function ClientGallery() {
               </button>
               )}
             </div>
-            );
-          })}
+          ))}
         </div>
       </div>
 
