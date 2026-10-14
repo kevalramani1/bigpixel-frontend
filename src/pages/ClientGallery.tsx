@@ -414,10 +414,11 @@ export default function ClientGallery() {
               onClick={() => setViewerIndex(index)}
             >
               <img
-                src={photo.thumbnail_url || photo.preview_url || photo.url}
+                src={photo.preview_url || photo.url || photo.thumbnail_url}
                 alt={`Photo ${index + 1}`}
                 className="block w-full h-auto opacity-100 group-hover:opacity-90 transition-opacity duration-300"
                 loading="lazy"
+                decoding="async"
               />
               
               {gallery.allow_download !== false && (
