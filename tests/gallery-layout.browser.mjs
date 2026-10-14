@@ -30,7 +30,7 @@ try {
       const expectedWidth=(document.documentElement.clientWidth-8-6*(columns-1))/columns;
       return images.every(image => {
         const rect=image.getBoundingClientRect();
-        return Math.abs(rect.width-expectedWidth)<1 && Math.abs(rect.width/rect.height-image.naturalWidth/image.naturalHeight)<0.01;
+        return image.classList.contains('opacity-100') && Math.abs(rect.width-expectedWidth)<1 && Math.abs(rect.width/rect.height-image.naturalWidth/image.naturalHeight)<0.01;
       });
     }, columns);
     const layout = await images.evaluateAll(images => images.map(image => {

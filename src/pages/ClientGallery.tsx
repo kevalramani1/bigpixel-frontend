@@ -37,7 +37,8 @@ export default function ClientGallery() {
   const [gallery, setGallery] = useState<Gallery | null>(null);
   const [columnCount, setColumnCount] = useState(() => window.matchMedia("(min-width: 1024px)").matches ? 4 : 2);
   const [imageRatios, setImageRatios] = useState<Record<number, number>>({});
-  const [imageStatus, setImageStatus] = useState<Record<number, "loading" | "loaded" | "error">>({});
+  const [imageStatus, setImageStatus] = useState<Record<number, "loading" | "ready" | "loaded" | "error">>({});
+  const [requestedThrough, setRequestedThrough] = useState(0);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 1024px)");
@@ -68,20 +69,38 @@ export default function ClientGallery() {
       const visible = entries.filter((entry) => entry.isIntersecting);
       if (!visible.length) return;
       visible.forEach((entry) => observer.unobserve(entry.target));
-      setImageStatus((previous) => {
-        const next = { ...previous };
-        visible.forEach((entry) => {
-          const id = Number((entry.target as HTMLElement).dataset.photoId);
-          if (!next[id]) next[id] = "loading";
-        });
-        return next;
-      });
+      setRequestedThrough((previous) => Math.max(previous, ...visible.map((entry) =>
+        Number((entry.target as HTMLElement).dataset.photoIndex) + 1
+      )));
     }, { rootMargin: "300px 0px" });
     grid.querySelectorAll<HTMLElement>("[data-photo-id]").forEach((card) => {
       if (!card.querySelector("img")?.hasAttribute("src")) observer.observe(card);
     });
     return () => observer.disconnect();
   }, [loading, error, gallery?.photos, gridWidth]);
+
+  // Gate batches explicitly: native lazy loading could stall an offscreen batch member.
+  useEffect(() => {
+    if (!masonryRef.current || !gridWidth || !gallery || !requestedThrough) return;
+    const statuses = Object.values(imageStatus);
+    if (statuses.includes("loading")) return;
+    if (statuses.includes("ready")) {
+      // Reveal the completed batch together before starting the next one.
+      setImageStatus((previous) => Object.fromEntries(Object.entries(previous).map(([id, status]) =>
+        [id, status === "ready" ? "loaded" : status]
+      )));
+      return;
+    }
+    const nextIndex = gallery.photos.findIndex((photo) => !imageStatus[photo.id]);
+    if (nextIndex === -1 || nextIndex >= requestedThrough) return;
+    setImageStatus((previous) => {
+      const next = { ...previous };
+      gallery.photos.slice(nextIndex, nextIndex + columnCount).forEach((photo) => {
+        next[photo.id] = "loading";
+      });
+      return next;
+    });
+  }, [gallery, imageStatus, requestedThrough, columnCount, gridWidth]);
 
 
   
@@ -153,6 +172,7 @@ export default function ClientGallery() {
       
       const data: Gallery = await res.json();
       setImageStatus({});
+      setRequestedThrough(0);
       setGallery(data);
 
       if (data.is_locked) {
@@ -462,8 +482,9 @@ export default function ClientGallery() {
             <div
               key={photo.id}
               data-photo-id={photo.id}
-              aria-busy={imageStatus[photo.id] === "loading"}
-              className={`absolute group cursor-pointer overflow-hidden bg-neutral-100 ${imageStatus[photo.id] === "loading" ? "animate-pulse" : ""}`}
+              data-photo-index={index}
+              aria-busy={imageStatus[photo.id] === "loading" || imageStatus[photo.id] === "ready"}
+              className={`absolute group cursor-pointer overflow-hidden bg-neutral-100 ${imageStatus[photo.id] === "loading" || imageStatus[photo.id] === "ready" ? "animate-pulse" : ""}`}
               style={masonry.items[index]}
               onClick={() => setViewerIndex(index)}
             >
@@ -471,12 +492,12 @@ export default function ClientGallery() {
                 src={imageStatus[photo.id] ? photo.preview_url || photo.url || photo.thumbnail_url : undefined}
                 alt={`Photo ${index + 1}`}
                 className={`block w-full h-full object-contain transition-opacity duration-300 ${imageStatus[photo.id] === "loaded" ? "opacity-100 group-hover:opacity-90" : "opacity-0"}`}
-                loading="lazy"
+                loading="eager"
                 decoding="async"
                 onLoad={(event) => {
                   const image = event.currentTarget;
                   if (!image.naturalWidth || !image.naturalHeight) return;
-                  setImageStatus((previous) => ({ ...previous, [photo.id]: "loaded" }));
+                  setImageStatus((previous) => ({ ...previous, [photo.id]: "ready" }));
                   const ratio = image.naturalWidth / image.naturalHeight;
                   setImageRatios((previous) => previous[photo.id] === ratio ? previous : { ...previous, [photo.id]: ratio });
                 }}

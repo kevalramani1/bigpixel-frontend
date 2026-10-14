@@ -4,14 +4,18 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const base = process.env.GALLERY_TEST_URL || 'http://localhost:5174';
 const browser = await chromium.launch({ headless:true, ...(process.env.CHROME_PATH ? { executablePath:process.env.CHROME_PATH } : {}) });
 
-async function fixture(failFirst = false) {
-  const page = await browser.newPage({ viewport:{ width:1440,height:900 } });
+async function fixture(failFirst = false, width = 1440, gateSecond = false) {
+  const columns = width >= 1024 ? 4 : 2;
+  const page = await browser.newPage({ viewport:{ width,height:900 } });
   const requests = [];
   const errors = [];
   let generation = 0;
   let failing = failFirst;
   let releaseFirst;
   const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  let releaseSecond;
+  const secondGate = new Promise(resolve => { releaseSecond = resolve; });
+  if (!gateSecond) releaseSecond();
   page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/api/galleries/lazy-test/public*',route=>{
     generation++;
@@ -24,24 +28,39 @@ async function fixture(failFirst = false) {
     const version=Number(url.searchParams.get('v'));
     requests.push({id,version});
     if(id===1) await firstGate;
+    if(id===columns+1) await secondGate;
     if(failing&&id===1) return route.fulfill({status:403,body:'Expired image URL'});
     const [width,height]=[[1600,900],[900,1600],[1600,900],[1000,1000]][(id-1)%4];
     return route.fulfill({contentType:'image/svg+xml',body:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="steelblue"/></svg>`});
   });
   await page.goto(`${base}/gallery/lazy-test`);
   await page.waitForFunction(()=>document.querySelector('[data-photo-id="1"]')?.getAttribute('aria-busy')==='true');
-  return {page,requests,errors,releaseFirst,allowRetry:()=>{failing=false;}};
+  return {page,requests,errors,releaseFirst,releaseSecond,columns,allowRetry:()=>{failing=false;}};
+}
+
+async function assertPendingBatch(app, start) {
+  await app.page.waitForFunction(({start,columns})=>
+    Array.from({length:columns-1},(_,index)=>document.querySelector(`img[alt="Photo ${start+index+1}"]`))
+      .every(image=>image?.complete&&image.naturalWidth>0), {start,columns:app.columns});
+  for(let id=start;id<start+app.columns;id++) {
+    assert.ok(app.requests.some(request=>request.id===id),'every photo in the batch downloads together');
+    assert.ok(!(await app.page.getByAltText(`Photo ${id}`,{exact:true}).getAttribute('class')).includes('opacity-100'),'completed siblings stay hidden until the whole batch is ready');
+  }
+  assert.equal(await app.page.getByAltText(`Photo ${start+app.columns}`,{exact:true}).getAttribute('src'),null,'next batch waits for the current batch');
 }
 
 try {
-  const app=await fixture();
+  const app=await fixture(false,1440,true);
   assert.equal(await app.page.locator('img[alt^="Photo "]').count(),200);
   assert.equal(await app.page.getByAltText('Photo 200',{exact:true}).getAttribute('src'),null,'far-away photo has no source URL yet');
   assert.ok(app.requests.length<200,'opening a gallery does not request every photo');
   await app.page.waitForFunction(()=>getComputedStyle(document.querySelector('img[alt="Photo 1"]')).opacity==='0');
   assert.equal(await app.page.getByAltText('Photo 1',{exact:true}).evaluate(image=>getComputedStyle(image).opacity), '0', 'placeholder remains visible while download is pending');
+  await assertPendingBatch(app,1);
   app.releaseFirst();
-  await app.page.waitForFunction(()=>document.querySelector('img[alt="Photo 1"]')?.classList.contains('opacity-100'));
+  await app.page.waitForFunction(()=>[1,2,3,4].every(id=>document.querySelector(`img[alt="Photo ${id}"]`)?.classList.contains('opacity-100')));
+  await assertPendingBatch(app,5);
+  app.releaseSecond();
   await app.page.getByAltText('Photo 200',{exact:true}).scrollIntoViewIfNeeded();
   await app.page.waitForFunction(()=>document.querySelector('img[alt="Photo 200"]')?.classList.contains('opacity-100'));
   assert.ok(app.requests.some(request=>request.id===200),'scrolling starts the deferred download');
@@ -55,7 +74,18 @@ try {
   assert.match(await viewer.getAttribute('src'),/preview-200\.svg/,'lightbox opens the selected photo directly');
   assert.deepEqual(app.errors,[]);
   await app.page.close();
-  console.log('200 photos: distant requests deferred, placeholders/fade-in work, scrolling loads photos, resize avoids duplicate downloads and lightbox works');
+  console.log('Desktop: 4-photo batches load sequentially and reveal together; 200-photo lazy loading, resize and lightbox passed');
+
+  const mobile=await fixture(false,390,true);
+  await assertPendingBatch(mobile,1);
+  mobile.releaseFirst();
+  await mobile.page.waitForFunction(()=>[1,2].every(id=>document.querySelector(`img[alt="Photo ${id}"]`)?.classList.contains('opacity-100')));
+  await assertPendingBatch(mobile,3);
+  mobile.releaseSecond();
+  await mobile.page.waitForFunction(()=>[3,4].every(id=>document.querySelector(`img[alt="Photo ${id}"]`)?.classList.contains('opacity-100')));
+  assert.deepEqual(mobile.errors,[]);
+  await mobile.page.close();
+  console.log('Mobile: 2-photo batches load sequentially and reveal together');
 
   const retry=await fixture(true);
   retry.releaseFirst();
