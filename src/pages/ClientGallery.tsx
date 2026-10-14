@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Lock, ArrowRight, Download, Play, Pause, ChevronLeft, ChevronRight, X,  Loader2, Mail } from "lucide-react";
 import JSZip from "jszip";
+import { getMasonryLayout } from "../lib/masonry";
 
 // Define Types
 type Photo = {
@@ -34,12 +35,13 @@ export default function ClientGallery() {
   const { slug } = useParams<{ slug: string }>();
   
   const [gallery, setGallery] = useState<Gallery | null>(null);
-  const [photosPerRow, setPhotosPerRow] = useState(() => window.matchMedia("(min-width: 1024px)").matches ? 4 : 2);
+  const [columnCount, setColumnCount] = useState(() => window.matchMedia("(min-width: 1024px)").matches ? 4 : 2);
   const [imageRatios, setImageRatios] = useState<Record<number, number>>({});
+  const [imageStatus, setImageStatus] = useState<Record<number, "loading" | "loaded" | "error">>({});
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 1024px)");
-    const updateColumns = () => setPhotosPerRow(desktop.matches ? 4 : 2);
+    const updateColumns = () => setColumnCount(desktop.matches ? 4 : 2);
     desktop.addEventListener("change", updateColumns);
     return () => desktop.removeEventListener("change", updateColumns);
   }, []);
@@ -47,6 +49,41 @@ export default function ClientGallery() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pinError, setPinError] = useState("");
+  const masonryRef = useRef<HTMLDivElement>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+
+  useEffect(() => {
+    const grid = masonryRef.current;
+    if (!grid) return;
+    setGridWidth(grid.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => setGridWidth(entry.contentRect.width));
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [loading, error, gallery?.id, gallery?.unlocked]);
+
+  useEffect(() => {
+    const grid = masonryRef.current;
+    if (!grid || !gridWidth) return;
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.filter((entry) => entry.isIntersecting);
+      if (!visible.length) return;
+      visible.forEach((entry) => observer.unobserve(entry.target));
+      setImageStatus((previous) => {
+        const next = { ...previous };
+        visible.forEach((entry) => {
+          const id = Number((entry.target as HTMLElement).dataset.photoId);
+          if (!next[id]) next[id] = "loading";
+        });
+        return next;
+      });
+    }, { rootMargin: "300px 0px" });
+    grid.querySelectorAll<HTMLElement>("[data-photo-id]").forEach((card) => {
+      if (!card.querySelector("img")?.hasAttribute("src")) observer.observe(card);
+    });
+    return () => observer.disconnect();
+  }, [loading, error, gallery?.photos, gridWidth]);
+
+
   
   const [pin, setPin] = useState("");
   const [verifying, setVerifying] = useState(false);
@@ -95,9 +132,9 @@ export default function ClientGallery() {
     galleryRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const fetchGallery = React.useCallback(async (pinAttempt?: string) => {
+  const fetchGallery = React.useCallback(async (pinAttempt?: string, refresh = false) => {
     try {
-      if (!pinAttempt) {
+      if (!pinAttempt && !refresh) {
         setLoading(true);
       }
       setError("");
@@ -115,6 +152,7 @@ export default function ClientGallery() {
       }
       
       const data: Gallery = await res.json();
+      setImageStatus({});
       setGallery(data);
 
       if (data.is_locked) {
@@ -278,6 +316,9 @@ export default function ClientGallery() {
 
   if (!gallery) return null;
 
+  const masonry = getMasonryLayout(gallery.photos.map((photo) => imageRatios[photo.id] || 1), gridWidth, columnCount);
+
+
   // PIN Entry View
   if (gallery.is_locked && !gallery.unlocked) {
     return (
@@ -416,52 +457,63 @@ export default function ClientGallery() {
 
       {/* Photo Grid */}
       <div className="w-full px-1 py-1">
-        <div className="flex flex-col gap-1.5">
-          {Array.from({ length: Math.ceil(gallery.photos.length / photosPerRow) }, (_, row) => (
-            <div key={gallery.photos[row * photosPerRow].id} className="flex gap-1.5">
-              {gallery.photos.slice(row * photosPerRow, (row + 1) * photosPerRow).map((photo, column) => {
-                const index = row * photosPerRow + column;
-                const ratio = imageRatios[photo.id] || 1;
-                return (
-                  <div
-                    key={photo.id}
-                    className="relative group min-w-0 cursor-pointer overflow-hidden bg-neutral-100"
-                    style={{ flex: `${ratio} 1 0%`, aspectRatio: ratio }}
-                    onClick={() => setViewerIndex(index)}
-                  >
-                    <img
-                      src={photo.preview_url || photo.url || photo.thumbnail_url}
-                      alt={`Photo ${index + 1}`}
-                      className="block w-full h-full object-cover opacity-100 group-hover:opacity-90 transition-opacity duration-300"
-                      loading="lazy"
-                      decoding="async"
-                      onLoad={(event) => {
-                        const image = event.currentTarget;
-                        if (!image.naturalWidth || !image.naturalHeight) return;
-                        const ratio = image.naturalWidth / image.naturalHeight;
-                        setImageRatios((previous) => previous[photo.id] === ratio ? previous : { ...previous, [photo.id]: ratio });
-                      }}
-                    />
-              
-                    {gallery.allow_download !== false && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        requireEmailCheck(() => downloadPhoto(photo, e));
-                      }}
-                      disabled={downloadingPhotoId === photo.id}
-                      className="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-black p-2.5 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg"
-                    >
-                      {downloadingPhotoId === photo.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Download className="w-4 h-4" />
-                      )}
-                    </button>
-                    )}
-                  </div>
-                );
-              })}
+        <div ref={masonryRef} className="relative" style={{ height: masonry.height }}>
+          {gallery.photos.map((photo, index) => (
+            <div
+              key={photo.id}
+              data-photo-id={photo.id}
+              aria-busy={imageStatus[photo.id] === "loading"}
+              className={`absolute group cursor-pointer overflow-hidden bg-neutral-100 ${imageStatus[photo.id] === "loading" ? "animate-pulse" : ""}`}
+              style={masonry.items[index]}
+              onClick={() => setViewerIndex(index)}
+            >
+              <img
+                src={imageStatus[photo.id] ? photo.preview_url || photo.url || photo.thumbnail_url : undefined}
+                alt={`Photo ${index + 1}`}
+                className={`block w-full h-full object-contain transition-opacity duration-300 ${imageStatus[photo.id] === "loaded" ? "opacity-100 group-hover:opacity-90" : "opacity-0"}`}
+                loading="lazy"
+                decoding="async"
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  if (!image.naturalWidth || !image.naturalHeight) return;
+                  setImageStatus((previous) => ({ ...previous, [photo.id]: "loaded" }));
+                  const ratio = image.naturalWidth / image.naturalHeight;
+                  setImageRatios((previous) => previous[photo.id] === ratio ? previous : { ...previous, [photo.id]: ratio });
+                }}
+                onError={() => setImageStatus((previous) => ({ ...previous, [photo.id]: "error" }))}
+              />
+              {imageStatus[photo.id] === "error" && (
+                <button
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-xs text-neutral-600 bg-neutral-100"
+                  aria-label={`Retry photo ${index + 1}`}
+                  disabled={verifying}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setVerifying(true);
+                    void fetchGallery(gallery.is_locked ? pin : undefined, true);
+                  }}
+                >
+                  <span>Photo could not load</span>
+                  <span className="underline">{verifying ? "Retrying..." : "Retry"}</span>
+                </button>
+              )}
+
+              {gallery.allow_download !== false && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  requireEmailCheck(() => downloadPhoto(photo, e));
+                }}
+                disabled={downloadingPhotoId === photo.id}
+                className="absolute bottom-4 right-4 bg-white/90 hover:bg-white text-black p-2.5 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg"
+              >
+                {downloadingPhotoId === photo.id ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+              </button>
+              )}
             </div>
           ))}
         </div>
