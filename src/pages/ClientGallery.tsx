@@ -114,6 +114,15 @@ export default function ClientGallery() {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [zipProgress, setZipProgress] = useState(0);
+  const [zipError, setZipError] = useState("");
+  const [zipReady, setZipReady] = useState<{ url: string; name: string } | null>(null);
+  const zipAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setZipReady(null);
+    setZipError("");
+    return () => { zipAbortRef.current?.abort(); };
+  }, [slug]);
     const [downloadingPhotoId, setDownloadingPhotoId] = useState<number | null>(null);
   
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -148,7 +157,7 @@ export default function ClientGallery() {
     }
   };
 
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const galleryRef = useRef<HTMLDivElement>(null);
   const scrollToGallery = () => {
     galleryRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -254,34 +263,45 @@ export default function ClientGallery() {
   };
 
   const downloadGalleryZip = async () => {
-    if (!gallery || gallery.photos.length === 0) return;
+    if (!gallery || gallery.photos.length === 0 || zipAbortRef.current) return;
+    const controller = new AbortController();
+    zipAbortRef.current = controller;
     try {
       setDownloadingZip(true);
-      const { default: JSZip } = await import("jszip");
-      const zip = new JSZip();
-      const folder = zip.folder(gallery.name.replace(/[^a-z0-9]/gi, '_').toLowerCase() || "gallery");
-      
-      const promises = gallery.photos.map(async (photo, index) => {
-        const res = await fetch(photo.url);
-        const blob = await res.blob();
-        folder?.file(`photo_${index + 1}.jpg`, blob);
-      });
-      
-      await Promise.all(promises);
-      const content = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(content);
-      
+      setZipProgress(0);
+      setZipError("");
+      setZipReady(null);
+      const { createGalleryZip } = await import("../lib/galleryZip");
+      const result = await createGalleryZip(gallery.name, gallery.photos.map((photo) => photo.id), async () => {
+        const base = (import.meta.env.VITE_API_URL || "http://localhost:8000/api").replace(/\/$/, "");
+        const query = new URLSearchParams(gallery.is_locked ? { pin } : {});
+        const response = await fetch(`${base.endsWith("/api") ? base : `${base}/api`}/galleries/${slug}/public?${query}`, { signal: controller.signal });
+        if (!response.ok) throw new Error("Failed to refresh download links. Please try again.");
+        const fresh: Gallery = await response.json();
+        if ((fresh.is_locked && !fresh.unlocked) || fresh.allow_bulk_download === false) throw new Error("Gallery download is no longer available. Refresh the gallery and try again.");
+        return fresh.photos;
+      }, setZipProgress, controller.signal);
+      const url = URL.createObjectURL(result.file);
+      setZipReady({ url, name: `${gallery.name || "gallery"}.zip` });
       const a = document.createElement("a");
       a.href = url;
       a.download = `${gallery.name || 'gallery'}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Let the browser finish copying the disk-backed ZIP before releasing it.
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        void result.cleanup().catch(console.error);
+        setZipReady((previous) => previous?.url === url ? null : previous);
+      }, 300_000);
     } catch (err) {
-      console.error("Failed to create ZIP", err);
-      alert("Failed to download gallery ZIP. Please try again.");
+      if (!controller.signal.aborted) {
+        console.error("Failed to create ZIP", err);
+        setZipError(err instanceof Error ? err.message : "Failed to download gallery ZIP. Please try again.");
+      }
     } finally {
+      zipAbortRef.current = null;
       setDownloadingZip(false);
     }
   };
@@ -465,6 +485,11 @@ export default function ClientGallery() {
               {downloadingZip ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
             </button>
           )}
+          {downloadingZip && <>
+            <span role="status" aria-live="polite" className="text-xs">Preparing ZIP {zipProgress}/{gallery.photos.length}</span>
+            <button onClick={() => zipAbortRef.current?.abort()} className="text-xs underline">Cancel</button>
+          </>}
+          {!downloadingZip && zipReady && <a href={zipReady.url} download={zipReady.name} className="text-xs underline">Download ZIP</a>}
           <button 
             onClick={() => {
               if (gallery.photos.length > 0) {
@@ -481,6 +506,7 @@ export default function ClientGallery() {
       </div>
 
       {/* Photo Grid */}
+      {zipError && <p role="alert" className="px-6 py-3 text-sm text-red-600">{zipError}</p>}
       <div className="w-full px-1 py-1">
         <div ref={masonryRef} className="relative" style={{ height: masonry.height }}>
           {gallery.photos.map((photo, index) => (

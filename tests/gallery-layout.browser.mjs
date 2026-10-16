@@ -67,7 +67,7 @@ try {
     await page.keyboard.press('Escape');
     console.log(`${width}px: ${columns} masonry columns, original ratios, no column gaps, resizing and lightbox passed`);
   }
-  assert.ok(!requests.some(url=>url.includes('jszip')),'ZIP library is not fetched when viewing the gallery');
+  assert.ok(!requests.some(url=>url.includes('galleryZip')),'ZIP library is not fetched when viewing the gallery');
   const downloadEvent = page.waitForEvent('download');
   await page.getByTitle('Download All',{exact:true}).click();
   const download = await downloadEvent;
@@ -75,7 +75,7 @@ try {
   const zip = await JSZip.loadAsync(await readFile(await download.path()));
   assert.deepEqual(Object.values(zip.files).filter(file=>!file.dir).map(file=>file.name), photos.map((_,index)=>`mixed_ratios/photo_${index+1}.jpg`));
   assert.ok((await zip.file('mixed_ratios/photo_1.jpg').async('string')).includes('>1</text>'),'download contains the original image');
-  assert.ok(requests.some(url=>url.includes('jszip')),'ZIP library loads on demand when downloading');
+  assert.ok(requests.some(url=>url.includes('galleryZip')),'ZIP library loads on demand when downloading');
   console.log('ZIP: library loads only on download and all original photos are included in order');
   assert.deepEqual(errors, []);
 } finally {
